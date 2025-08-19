@@ -1,0 +1,88 @@
+{
+  "name": "vs-markdown-file-path-completion",
+  "displayName": "Markdown File Path Completion",
+  "description": "Provides file path autocompletion in Markdown files triggered by @ character",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Markdown Path Completion",
+      "properties": {
+        "markdownPathCompletion.exclude": {
+          "type": "object",
+          "default": {
+            "**/node_modules": true,
+            "**/.git": true,
+            "**/dist": true,
+            "**/build": true,
+            "**/out": true,
+            "**/.vscode": true,
+            "**/coverage": true,
+            "**/*.log": true,
+            "**/.DS_Store": true,
+            "**/Thumbs.db": true,
+            "**/.idea": true,
+            "**/.vs": true,
+            "**/__pycache__": true,
+            "**/*.pyc": true,
+            "**/tmp": true,
+            "**/temp": true
+          },
+          "description": "Glob patterns for files/folders to exclude from path completion"
+        },
+        "markdownPathCompletion.include": {
+          "type": "array",
+          "default": ["**/*"],
+          "description": "Glob patterns for files to include in path completion"
+        },
+        "markdownPathCompletion.maxResults": {
+          "type": "number",
+          "default": 50,
+          "description": "Maximum number of completion suggestions to show"
+        },
+        "markdownPathCompletion.showHiddenFiles": {
+          "type": "boolean",
+          "default": false,
+          "description": "Include hidden files (starting with .) in completion suggestions"
+        },
+        "markdownPathCompletion.useGitignore": {
+          "type": "boolean",
+          "default": true,
+          "description": "Use .gitignore patterns for excluding files"
+        },
+        "markdownPathCompletion.caseInsensitive": {
+          "type": "boolean",
+          "default": true,
+          "description": "Perform case-insensitive matching"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.0.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "16.x",
+    "@types/vscode": "^1.74.0",
+    "@typescript-eslint/eslint-plugin": "^5.45.0",
+    "@typescript-eslint/parser": "^5.45.0",
+    "@vscode/test-cli": "^0.0.4",
+    "@vscode/test-electron": "^2.2.0",
+    "eslint": "^8.28.0",
+    "glob": "^8.0.3",
+    "mocha": "^10.1.0",
+    "typescript": "^4.9.3"
+  }
+}
