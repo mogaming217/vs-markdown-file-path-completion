@@ -1,82 +1,98 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
-import { getConfiguration, getExcludePatterns } from './config';
+import { ConfigurationManager, getExcludePatterns, getWorkspaceConfig } from './config';
 import { getRelativePath, shouldIncludeFile } from './utils';
+import { FileCache } from './cache';
 
 export class FileScanner {
-    private fileCache: string[] = [];
-    private lastScanTime = 0;
-    private cacheValidityDuration = 30000; // 30 seconds
-    private fileWatcher: vscode.FileSystemWatcher | undefined;
+    private fileCache: FileCache;
+    private configManager: ConfigurationManager;
+    private configChangeListener: vscode.Disposable | undefined;
+    private globalFileWatcher: vscode.FileSystemWatcher | undefined;
 
     constructor() {
-        this.setupFileWatcher();
+        this.configManager = ConfigurationManager.getInstance();
+        this.fileCache = new FileCache(10, 60000); // 10 workspaces max, 60 second validity
+        this.setupGlobalFileWatcher();
+        this.setupConfigListener();
     }
 
     /**
-     * Sets up file system watcher to invalidate cache on file changes
+     * Sets up global file system watcher for major changes
      */
-    private setupFileWatcher(): void {
-        if (this.fileWatcher) {
-            this.fileWatcher.dispose();
+    private setupGlobalFileWatcher(): void {
+        if (this.globalFileWatcher) {
+            this.globalFileWatcher.dispose();
         }
 
-        this.fileWatcher = vscode.workspace.createFileSystemWatcher('**/*');
+        // Watch for major structural changes
+        this.globalFileWatcher = vscode.workspace.createFileSystemWatcher('**/{.gitignore,package.json,tsconfig.json}');
         
-        // Invalidate cache on file changes
-        this.fileWatcher.onDidCreate(() => this.invalidateCache());
-        this.fileWatcher.onDidDelete(() => this.invalidateCache());
+        // Invalidate all caches on major changes
+        this.globalFileWatcher.onDidCreate(() => this.invalidateCache());
+        this.globalFileWatcher.onDidChange(() => this.invalidateCache());
+        this.globalFileWatcher.onDidDelete(() => this.invalidateCache());
+    }
+
+    /**
+     * Sets up configuration change listener
+     */
+    private setupConfigListener(): void {
+        this.configChangeListener = this.configManager.onConfigChange(() => {
+            // Invalidate cache when configuration changes
+            this.invalidateCache();
+        });
     }
 
     /**
      * Invalidates the file cache
      */
     private invalidateCache(): void {
-        this.fileCache = [];
-        this.lastScanTime = 0;
+        this.fileCache.clear();
     }
 
-    /**
-     * Checks if the cache is still valid
-     */
-    private isCacheValid(): boolean {
-        return this.fileCache.length > 0 && 
-               (Date.now() - this.lastScanTime) < this.cacheValidityDuration;
-    }
 
     /**
      * Scans the workspace for all files, applying exclusion patterns
      */
     public async scanWorkspace(): Promise<string[]> {
-        // Return cached results if still valid
-        if (this.isCacheValid()) {
-            return this.fileCache;
-        }
+        // Cached results are now handled per workspace in the loop below
 
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
             return [];
         }
 
-        const config = getConfiguration();
-        const excludePatterns = getExcludePatterns(config.exclude);
         const files: string[] = [];
 
         for (const workspaceFolder of workspaceFolders) {
+            const workspacePath = workspaceFolder.uri.fsPath;
+            
+            // Check cache for this specific workspace
+            const cachedFiles = this.fileCache.getCachedFiles(workspacePath);
+            if (cachedFiles) {
+                files.push(...cachedFiles);
+                continue;
+            }
+            
+            // Get workspace-specific config
+            const workspaceConfig = getWorkspaceConfig(workspaceFolder);
+            const workspaceExcludePatterns = getExcludePatterns(workspaceConfig.exclude);
+            
             const workspaceFiles = await this.scanFolder(
-                workspaceFolder.uri.fsPath,
-                workspaceFolder.uri.fsPath,
-                excludePatterns,
-                config.showHiddenFiles,
-                config.useGitignore
+                workspacePath,
+                workspacePath,
+                workspaceExcludePatterns,
+                workspaceConfig.showHiddenFiles,
+                workspaceConfig.useGitignore
             );
+            
+            // Update cache for this workspace
+            this.fileCache.setCachedFiles(workspacePath, workspaceFiles);
+            
             files.push(...workspaceFiles);
         }
-
-        // Update cache
-        this.fileCache = files;
-        this.lastScanTime = Date.now();
 
         return files;
     }
@@ -214,7 +230,7 @@ export class FileScanner {
      */
     public async getMatchingFiles(query: string): Promise<string[]> {
         const allFiles = await this.scanWorkspace();
-        const config = getConfiguration();
+        const config = this.configManager.getConfig();
 
         if (!query) {
             return allFiles.slice(0, config.maxResults);
@@ -235,10 +251,14 @@ export class FileScanner {
      * Disposes the file scanner and cleans up resources
      */
     public dispose(): void {
-        if (this.fileWatcher) {
-            this.fileWatcher.dispose();
-            this.fileWatcher = undefined;
+        if (this.globalFileWatcher) {
+            this.globalFileWatcher.dispose();
+            this.globalFileWatcher = undefined;
         }
-        this.invalidateCache();
+        if (this.configChangeListener) {
+            this.configChangeListener.dispose();
+            this.configChangeListener = undefined;
+        }
+        this.fileCache.dispose();
     }
 }

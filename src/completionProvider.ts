@@ -14,7 +14,7 @@ export class MarkdownFilePathCompletionProvider implements vscode.CompletionItem
         document: vscode.TextDocument,
         position: vscode.Position,
         token: vscode.CancellationToken,
-        _context: vscode.CompletionContext
+        _context: vscode.CompletionContext // eslint-disable-line @typescript-eslint/no-unused-vars
     ): Promise<vscode.CompletionItem[] | vscode.CompletionList | undefined> {
         // Only provide completions in markdown files
         if (document.languageId !== 'markdown') {
@@ -100,7 +100,7 @@ export class MarkdownFilePathCompletionProvider implements vscode.CompletionItem
      */
     public resolveCompletionItem(
         item: vscode.CompletionItem,
-        _token: vscode.CancellationToken
+        _token: vscode.CancellationToken // eslint-disable-line @typescript-eslint/no-unused-vars
     ): vscode.ProviderResult<vscode.CompletionItem> {
         // For now, we don't need to resolve additional information
         // This could be used in the future to add more details like file size, last modified, etc.

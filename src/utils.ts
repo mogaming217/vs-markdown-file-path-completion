@@ -23,6 +23,88 @@ export function getRelativePath(filePath: string, workspaceRoot: string): string
 }
 
 /**
+ * Fuzzy matching implementation for better search results
+ * Returns a score based on how well the query matches the target string
+ */
+function fuzzyMatch(query: string, target: string, caseInsensitive = true): number {
+    const searchQuery = caseInsensitive ? query.toLowerCase() : query;
+    const searchTarget = caseInsensitive ? target.toLowerCase() : target;
+    
+    if (!searchQuery) {return 1;}
+    if (searchTarget === searchQuery) {return 100;}
+    
+    let score = 0;
+    let queryIndex = 0;
+    let targetIndex = 0;
+    let consecutiveMatches = 0;
+    
+    while (queryIndex < searchQuery.length && targetIndex < searchTarget.length) {
+        if (searchQuery[queryIndex] === searchTarget[targetIndex]) {
+            score += 10;
+            
+            // Bonus for consecutive matches
+            consecutiveMatches++;
+            score += consecutiveMatches * 2;
+            
+            // Bonus for matching at word boundaries
+            if (targetIndex === 0 || target[targetIndex - 1] === '/' || target[targetIndex - 1] === '-' || target[targetIndex - 1] === '_') {
+                score += 15;
+            }
+            
+            queryIndex++;
+        } else {
+            consecutiveMatches = 0;
+        }
+        targetIndex++;
+    }
+    
+    // If we didn't match all query characters, penalize heavily
+    if (queryIndex < searchQuery.length) {
+        score = score * queryIndex / searchQuery.length;
+    }
+    
+    // Bonus for shorter targets (more specific matches)
+    score += Math.max(0, 50 - target.length) / 5;
+    
+    return score;
+}
+
+/**
+ * Calculates the Levenshtein distance between two strings
+ * Lower values indicate more similar strings
+ */
+function levenshteinDistance(str1: string, str2: string): number {
+    const m = str1.length;
+    const n = str2.length;
+    
+    if (m === 0) {return n;}
+    if (n === 0) {return m;}
+    
+    const matrix: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+    
+    for (let i = 0; i <= m; i++) {
+        matrix[i][0] = i;
+    }
+    
+    for (let j = 0; j <= n; j++) {
+        matrix[0][j] = j;
+    }
+    
+    for (let i = 1; i <= m; i++) {
+        for (let j = 1; j <= n; j++) {
+            const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+            matrix[i][j] = Math.min(
+                matrix[i - 1][j] + 1,      // deletion
+                matrix[i][j - 1] + 1,      // insertion
+                matrix[i - 1][j - 1] + cost // substitution
+            );
+        }
+    }
+    
+    return matrix[m][n];
+}
+
+/**
  * Calculates a relevance score for a file match based on the search query
  * Higher scores indicate better matches
  */
@@ -30,7 +112,6 @@ export function calculateScore(filePath: string, query: string, caseInsensitive 
     const fileName = path.basename(filePath);
     const searchQuery = caseInsensitive ? query.toLowerCase() : query;
     const searchFileName = caseInsensitive ? fileName.toLowerCase() : fileName;
-    const searchFilePath = caseInsensitive ? filePath.toLowerCase() : filePath;
 
     // If query is empty, return base score
     if (!searchQuery) {
@@ -41,23 +122,23 @@ export function calculateScore(filePath: string, query: string, caseInsensitive 
 
     // Exact filename match gets highest score
     if (searchFileName === searchQuery) {
-        score += 100;
+        score += 200;
     }
-    // Filename starts with query gets high score
-    else if (searchFileName.startsWith(searchQuery)) {
-        score += 80;
-    }
-    // Filename contains query gets medium score
-    else if (searchFileName.includes(searchQuery)) {
-        score += 60;
-    }
-    // Full path starts with query gets medium score
-    else if (searchFilePath.startsWith(searchQuery)) {
-        score += 40;
-    }
-    // Full path contains query gets low score
-    else if (searchFilePath.includes(searchQuery)) {
-        score += 20;
+    // Use fuzzy matching for partial matches
+    else {
+        // Fuzzy match on filename (weighted higher)
+        const fileNameFuzzyScore = fuzzyMatch(query, fileName, caseInsensitive);
+        score += fileNameFuzzyScore * 1.5;
+        
+        // Fuzzy match on full path
+        const pathFuzzyScore = fuzzyMatch(query, filePath, caseInsensitive);
+        score += pathFuzzyScore * 0.5;
+        
+        // Levenshtein distance bonus (inverse - closer strings get higher scores)
+        const distance = levenshteinDistance(searchQuery, searchFileName);
+        const maxDistance = Math.max(searchQuery.length, searchFileName.length);
+        const similarityScore = (1 - (distance / maxDistance)) * 50;
+        score += similarityScore;
     }
 
     // Bonus points for shorter paths (closer to root)
@@ -70,6 +151,24 @@ export function calculateScore(filePath: string, query: string, caseInsensitive 
     if (commonExtensions.includes(ext)) {
         score += 5;
     }
+    
+    // Bonus for files that start with query
+    if (searchFileName.startsWith(searchQuery)) {
+        score += 30;
+    }
+    
+    // Bonus for camelCase/snake_case boundary matches
+    const boundaryMatches = query.split('').filter((char, index) => {
+        const charLower = char.toLowerCase();
+        const fileNameIndex = fileName.toLowerCase().indexOf(charLower, index);
+        if (fileNameIndex > 0) {
+            const prevChar = fileName[fileNameIndex - 1];
+            return prevChar === '_' || prevChar === '-' || 
+                   (prevChar.toLowerCase() === prevChar && fileName[fileNameIndex] !== fileName[fileNameIndex].toLowerCase());
+        }
+        return fileNameIndex === 0;
+    }).length;
+    score += boundaryMatches * 10;
 
     return score;
 }
@@ -89,7 +188,8 @@ export function filterAndSortFiles(
         const score = calculateScore(filePath, query, caseInsensitive);
         
         // Only include files that have some relevance to the query
-        if (score > 0) {
+        // Lower threshold to include more fuzzy matches
+        if (score > 10 || !query) {
             matches.push({
                 relativePath: filePath,
                 fileName: path.basename(filePath),
