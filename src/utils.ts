@@ -1,5 +1,6 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { FuzzyMatch } from './fuzzySearch';
 
 export interface FileMatch {
     relativePath: string;
@@ -226,25 +227,34 @@ export function shouldIncludeFile(filePath: string, showHiddenFiles: boolean): b
  * Extracts the query text after the @ trigger character
  */
 export function extractQueryFromLine(line: string, position: number): string | null {
+    console.log('extractQueryFromLine called with:', { line: JSON.stringify(line), position });
+    
     // Find the last @ character before the cursor position
     let atIndex = -1;
     for (let i = position - 1; i >= 0; i--) {
+        console.log(`Checking position ${i}: char='${line[i]}' (code=${line.charCodeAt(i)})`);
         if (line[i] === '@') {
             atIndex = i;
+            console.log('Found @ at index:', atIndex);
             break;
         }
         // If we hit whitespace before finding @, this isn't a valid completion
         if (line[i] === ' ' || line[i] === '\t' || line[i] === '\n') {
+            console.log('Hit whitespace at position', i, 'stopping search');
             break;
         }
     }
 
     if (atIndex === -1) {
+        console.log('No @ found, returning null');
         return null;
     }
 
     // Extract text between @ and cursor position
-    return line.substring(atIndex + 1, position);
+    // Return empty string if @ is at cursor position (just typed)
+    const result = line.substring(atIndex + 1, position);
+    console.log('Extracted query result:', JSON.stringify(result));
+    return result;
 }
 
 /**
@@ -261,9 +271,46 @@ export function createCompletionItem(
     item.sortText = String(1000 - fileMatch.score).padStart(4, '0'); // Ensure proper sorting
     
     // If range is provided, use it for replacement
-    if (range) {
-        item.range = range;
+    // if (range) {
+    //     item.range = range;
+    // }
+    
+    return item;
+}
+
+/**
+ * Creates a VS Code completion item from a fuzzy match
+ */
+export function createCompletionItemFromFuzzyMatch(
+    match: FuzzyMatch,
+    range?: vscode.Range
+): vscode.CompletionItem {
+    const fileName = path.basename(match.path);
+    const item = new vscode.CompletionItem(match.path, vscode.CompletionItemKind.File);
+    
+    item.detail = `File: ${fileName}`;
+    item.documentation = new vscode.MarkdownString(`Path: \`${match.path}\`\nScore: ${match.score.toFixed(2)}`);
+    item.sortText = String(10000 - Math.round(match.score * 100)).padStart(6, '0'); // Ensure proper sorting
+    
+    // Set the text to insert (without @)
+    item.insertText = match.path;
+    
+    // Set filter text to include partial query for better filtering
+    item.filterText = match.path;
+    
+    // Highlight matched characters if available
+    if (match.matches && match.matches.length > 0) {
+        // Note: VSCode doesn't support custom highlighting in completion items directly
+        // But we can add this info to the documentation
+        item.documentation = new vscode.MarkdownString(
+            `Path: \`${match.path}\`\n\nScore: ${match.score.toFixed(2)}\n\nMatched positions: ${match.matches.join(', ')}`
+        );
     }
+    
+    // If range is provided, use it for replacement
+    // if (range) {
+    //     item.range = range;
+    // }
     
     return item;
 }
