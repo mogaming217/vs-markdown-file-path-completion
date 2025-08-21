@@ -7,9 +7,17 @@
     "vscode": "^1.74.0"
   },
   "categories": ["Other"],
-  "activationEvents": [],
-  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "main": "./out/src/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "markdownPathCompletion.debugScan",
+        "title": "Debug: Scan Workspace Files"
+      }
+    ],
     "configuration": {
       "title": "Markdown Path Completion",
       "properties": {

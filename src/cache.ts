@@ -76,7 +76,6 @@ export class LRUCache<K, V> {
  */
 export interface FileCacheEntry {
     files: string[];
-    lastScanTime: number;
     version: number;
 }
 
@@ -88,12 +87,10 @@ export class FileCache {
     private fileWatchers: Map<string, vscode.FileSystemWatcher> = new Map();
     private pendingUpdates: Map<string, Set<string>> = new Map();
     private updateDebounceTimers: Map<string, NodeJS.Timeout> = new Map();
-    private readonly cacheValidityDuration: number;
     private readonly debounceDelay = 500; // 500ms debounce for file changes
 
-    constructor(maxSize = 10, cacheValidityDuration = 30000) {
+    constructor(maxSize = 10) {
         this.cache = new LRUCache(maxSize);
-        this.cacheValidityDuration = cacheValidityDuration;
     }
 
     /**
@@ -101,18 +98,7 @@ export class FileCache {
      */
     getCachedFiles(workspacePath: string): string[] | undefined {
         const entry = this.cache.get(workspacePath);
-        
-        if (!entry) {
-            return undefined;
-        }
-
-        // Check if cache is still valid
-        if (Date.now() - entry.lastScanTime > this.cacheValidityDuration) {
-            this.cache.clear();
-            return undefined;
-        }
-
-        return entry.files;
+        return entry?.files;
     }
 
     /**
@@ -121,7 +107,6 @@ export class FileCache {
     setCachedFiles(workspacePath: string, files: string[]): void {
         const entry: FileCacheEntry = {
             files,
-            lastScanTime: Date.now(),
             version: Date.now()
         };
 
