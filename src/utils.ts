@@ -227,33 +227,27 @@ export function shouldIncludeFile(filePath: string, showHiddenFiles: boolean): b
  * Extracts the query text after the @ trigger character
  */
 export function extractQueryFromLine(line: string, position: number): string | null {
-    console.log('extractQueryFromLine called with:', { line: JSON.stringify(line), position });
     
     // Find the last @ character before the cursor position
     let atIndex = -1;
     for (let i = position - 1; i >= 0; i--) {
-        console.log(`Checking position ${i}: char='${line[i]}' (code=${line.charCodeAt(i)})`);
         if (line[i] === '@') {
             atIndex = i;
-            console.log('Found @ at index:', atIndex);
             break;
         }
         // If we hit whitespace before finding @, this isn't a valid completion
         if (line[i] === ' ' || line[i] === '\t' || line[i] === '\n') {
-            console.log('Hit whitespace at position', i, 'stopping search');
             break;
         }
     }
 
     if (atIndex === -1) {
-        console.log('No @ found, returning null');
         return null;
     }
 
     // Extract text between @ and cursor position
     // Return empty string if @ is at cursor position (just typed)
     const result = line.substring(atIndex + 1, position);
-    console.log('Extracted query result:', JSON.stringify(result));
     return result;
 }
 
@@ -262,7 +256,7 @@ export function extractQueryFromLine(line: string, position: number): string | n
  */
 export function createCompletionItem(
     fileMatch: FileMatch,
-    range?: vscode.Range
+    _range?: vscode.Range
 ): vscode.CompletionItem {
     const item = new vscode.CompletionItem(fileMatch.relativePath, vscode.CompletionItemKind.File);
     
@@ -283,7 +277,7 @@ export function createCompletionItem(
  */
 export function createCompletionItemFromFuzzyMatch(
     match: FuzzyMatch,
-    range?: vscode.Range
+    _range?: vscode.Range
 ): vscode.CompletionItem {
     const fileName = path.basename(match.path);
     const item = new vscode.CompletionItem(match.path, vscode.CompletionItemKind.File);

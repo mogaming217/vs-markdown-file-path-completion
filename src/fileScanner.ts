@@ -5,8 +5,6 @@ import { ConfigurationManager, getExcludePatterns, getWorkspaceConfig } from './
 import { getRelativePath, shouldIncludeFile } from './utils';
 import { FileCache } from './cache';
 import { FuzzySearcher, FuzzyMatch } from './fuzzySearch';
-import { HierarchicalSearchCache } from './searchCache';
-import { AsyncBatchProcessor } from './asyncBatchProcessor';
 
 interface GitignorePattern {
     pattern: string;
@@ -19,19 +17,11 @@ export class FileScanner {
     private configChangeListener: vscode.Disposable | undefined;
     private globalFileWatcher: vscode.FileSystemWatcher | undefined;
     private fuzzySearcher: FuzzySearcher;
-    private searchCache: HierarchicalSearchCache;
-    private batchProcessor: AsyncBatchProcessor;
 
     constructor() {
         this.configManager = ConfigurationManager.getInstance();
         this.fileCache = new FileCache(10); // 10 workspaces max
         this.fuzzySearcher = new FuzzySearcher({ caseInsensitive: true });
-        this.searchCache = new HierarchicalSearchCache(100); // 100 queries max
-        this.batchProcessor = new AsyncBatchProcessor({
-            batchSize: 20,
-            delayMs: 10,
-            maxBatches: 50
-        });
         this.setupGlobalFileWatcher();
         this.setupConfigListener();
     }
@@ -68,7 +58,6 @@ export class FileScanner {
      */
     private invalidateCache(): void {
         this.fileCache.clear();
-        this.searchCache.clear();
     }
 
 
@@ -77,15 +66,11 @@ export class FileScanner {
      */
     public async scanWorkspace(): Promise<string[]> {
         // Cached results are now handled per workspace in the loop below
-        console.log('FileScanner.scanWorkspace called');
 
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
-            console.log('No workspace folders found in scanWorkspace');
-            console.log('vscode.workspace.workspaceFolders:', vscode.workspace.workspaceFolders);
             return [];
         }
-        console.log('Found workspace folders:', workspaceFolders.map(f => f.uri.fsPath));
 
         const files: string[] = [];
 
@@ -118,7 +103,6 @@ export class FileScanner {
             files.push(...workspaceFiles);
         }
 
-        console.log('scanWorkspace returning', files.length, 'files');
         return files;
     }
 
@@ -141,14 +125,12 @@ export class FileScanner {
         if (useGitignore) {
             const localPatterns = await this.loadGitignorePatterns(folderPath, workspaceRoot);
             if (localPatterns.length > 0) {
-                console.log(`Loaded ${localPatterns.length} gitignore patterns from ${folderPath}`);
                 currentGitignorePatterns = [...currentGitignorePatterns, ...localPatterns];
             }
         }
 
         try {
             const entries = await fs.promises.readdir(folderPath, { withFileTypes: true });
-            console.log(`Scanning folder: ${folderPath}, found ${entries.length} entries`);
 
             for (const entry of entries) {
                 // Early exclusion for common large directories
@@ -157,7 +139,6 @@ export class FileScanner {
                     if (dirName === 'node_modules' || dirName === '.git' || dirName === 'dist' || 
                         dirName === 'build' || dirName === 'out' || dirName === 'coverage' ||
                         dirName === '.next' || dirName === '.nuxt' || dirName === 'vendor') {
-                        console.log(`Skipping known large directory: ${entry.name}`);
                         continue;
                     }
                 }
@@ -167,24 +148,17 @@ export class FileScanner {
 
                 // Check hidden files first (faster)
                 if (!shouldIncludeFile(relativePath, showHiddenFiles)) {
-                    console.log(`Excluding hidden file/dir: ${relativePath}`);
                     continue;
                 }
 
                 // Check if path should be excluded
                 if (this.shouldExcludePath(relativePath, excludePatterns, currentGitignorePatterns, entry.isDirectory())) {
-                    if (entry.isDirectory() && relativePath.includes('Pods')) {
-                        console.log(`Excluding Pods directory: ${relativePath}/ (gitignore patterns: ${currentGitignorePatterns.map(p => p.pattern).join(', ')})`);
-                    } else {
-                        console.log(`Excluding path (pattern match): ${relativePath}${entry.isDirectory() ? '/' : ''}`);
-                    }
                     continue;
                 }
 
                 if (entry.isDirectory()) {
                     // Check if we've already hit the file limit
                     if (files.length >= maxFiles) {
-                        console.log(`Already at max file limit (${maxFiles}), skipping directory: ${entry.name}`);
                         continue;
                     }
                     
@@ -204,14 +178,12 @@ export class FileScanner {
                     
                     // Limit file count for performance
                     if (files.length >= maxFiles) {
-                        console.log(`Reached max file limit (${maxFiles}), stopping scan`);
                         return files;
                     }
                 }
             }
-        } catch (error) {
+        } catch {
             // Silently ignore permission errors and continue scanning
-            console.warn(`Failed to scan folder ${folderPath}:`, error);
         }
 
         return files;
@@ -261,7 +233,7 @@ export class FileScanner {
         relativePath: string,
         excludePatterns: string[],
         gitignorePatterns: GitignorePattern[],
-        isDirectory: boolean = false
+        isDirectory = false
     ): boolean {
         // Check standard exclude patterns
         for (const pattern of excludePatterns) {
@@ -299,7 +271,9 @@ export class FileScanner {
         
         // Handle directory patterns
         if (pattern.endsWith('/')) {
-            if (!isDirectory) return false;
+            if (!isDirectory) {
+                return false;
+            }
             const dirPattern = pattern.slice(0, -1);
             
             // Special handling for **/dirname/ patterns
@@ -343,7 +317,7 @@ export class FileScanner {
      */
     private matchesGitignorePatternInternal(path: string, pattern: string): boolean {
         // Convert gitignore pattern to regex
-        let regexPattern = pattern
+        const regexPattern = pattern
             .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special regex chars
             .replace(/\*\*/g, '___DOUBLESTAR___')
             .replace(/\*/g, '[^/]*')
@@ -376,7 +350,7 @@ export class FileScanner {
         }
         
         // Convert glob pattern to regex
-        let regexPattern = pattern
+        const regexPattern = pattern
             .replace(/[.+^${}()|[\]\\]/g, '\\$&') // Escape special regex chars except * and ?
             .replace(/\*\*/g, '___DOUBLESTAR___')
             .replace(/\*/g, '[^/]*')
@@ -401,66 +375,27 @@ export class FileScanner {
      * Gets files that match a partial query using VSCode-like fuzzy search
      */
     public async getMatchingFiles(query: string, token?: vscode.CancellationToken): Promise<FuzzyMatch[]> {
-        console.log('=== getMatchingFiles called ===');
-        console.log('Query:', query);
         
-        // Check hierarchical cache first
-        const cachedResults = this.searchCache.getCachedResults(query);
-        if (cachedResults) {
-            console.log('Found cached results:', cachedResults.length);
-            // Filter cached results for more specific query
-            const filtered = this.searchCache.filterCachedResults(cachedResults, query);
-            const searchResults = this.fuzzySearcher.search(query, filtered.map(m => m.path), this.configManager.getConfig().maxResults);
-            console.log('Returning', searchResults.length, 'results from cache');
-            return searchResults;
-        }
 
         // Check for cancellation
         if (token?.isCancellationRequested) {
-            console.log('Search cancelled by token');
             return [];
         }
 
         // Get all files from workspace
-        console.log('Scanning workspace...');
         const allFiles = await this.scanWorkspace();
-        console.log('Scan complete. Total files:', allFiles.length);
         
         if (allFiles.length === 0) {
-            console.log('WARNING: No files found in workspace!');
-            console.log('WorkspaceFolders:', vscode.workspace.workspaceFolders?.map(f => f.uri.fsPath));
             return [];
         }
         
-        // Log sample of files
-        console.log('Sample files:', allFiles.slice(0, 10));
-        
-        // Log files containing "recipe"
-        const recipeFiles = allFiles.filter(f => f.toLowerCase().includes('recipe'));
-        console.log('Files containing "recipe":', recipeFiles.length);
-        if (recipeFiles.length > 0) {
-            console.log('Recipe files:', recipeFiles.slice(0, 5));
-        }
         
         const config = this.configManager.getConfig();
 
         // Perform fuzzy search
-        console.log('Performing fuzzy search with query:', query, 'on', allFiles.length, 'files');
-        console.log('Max results:', config.maxResults);
-        console.log('Case insensitive:', config.caseInsensitive);
         
         const matches = this.fuzzySearcher.search(query, allFiles, config.maxResults * 2);
-        console.log('Fuzzy search returned', matches.length, 'matches');
         
-        if (matches.length === 0) {
-            console.log('No matches found for query:', query);
-            // Try a simple substring search to debug
-            const simpleMatches = allFiles.filter(f => f.toLowerCase().includes(query.toLowerCase()));
-            console.log('Simple substring search found:', simpleMatches.length, 'files');
-            if (simpleMatches.length > 0) {
-                console.log('Simple matches:', simpleMatches.slice(0, 5));
-            }
-        }
 
         // Apply file type weights
         for (const match of matches) {
@@ -470,8 +405,6 @@ export class FileScanner {
         // Sort by score
         matches.sort((a, b) => b.score - a.score);
 
-        // Cache the results
-        this.searchCache.setCachedResults(query, matches);
 
         // Return limited results
         return matches.slice(0, config.maxResults);
@@ -483,10 +416,8 @@ export class FileScanner {
     public async *getMatchingFilesAsync(query: string, token: vscode.CancellationToken): AsyncGenerator<FuzzyMatch[], void, unknown> {
         const matches = await this.getMatchingFiles(query, token);
         
-        // Process matches in prioritized batches
-        for await (const batch of this.batchProcessor.processFuzzyMatchBatches(matches, token)) {
-            yield batch;
-        }
+        // Return matches in a single batch for now
+        yield matches;
     }
 
     /**
@@ -502,6 +433,5 @@ export class FileScanner {
             this.configChangeListener = undefined;
         }
         this.fileCache.dispose();
-        this.searchCache.clear();
     }
 }
