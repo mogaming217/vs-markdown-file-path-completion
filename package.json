@@ -1,16 +1,35 @@
 {
   "name": "vs-markdown-file-path-completion",
   "displayName": "Markdown File Path Completion",
-  "description": "Provides file path autocompletion in Markdown files triggered by @ character",
+  "description": "Provides file path autocompletion in Markdown files triggered by @ character for Claude Code.",
   "version": "0.0.1",
+  "author": "moga",
+  "publisher": "moga",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.74.0"
   },
-  "categories": ["Other"],
+  "categories": [
+    "Other"
+  ],
   "activationEvents": [
     "onLanguage:markdown"
   ],
   "main": "./out/src/extension.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/mogaming217/vs-markdown-file-path-completion.git"
+  },
+  "scripts": {
+    "vscode:package": "npm run compile && npm run package",
+    "vscode:publish": "vsce publish",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package || @vscode/vsce package",
+    "pretest": "npm run compile && npm run lint",
+    "lint": "eslint src --ext ts",
+    "test": "vscode-test"
+  },
   "contributes": {
     "commands": [
       {
@@ -45,7 +64,9 @@
         },
         "markdownPathCompletion.include": {
           "type": "array",
-          "default": ["**/*"],
+          "default": [
+            "**/*"
+          ],
           "description": "Glob patterns for files to include in path completion"
         },
         "markdownPathCompletion.maxResults": {
@@ -71,14 +92,6 @@
       }
     }
   },
-  "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "pretest": "npm run compile && npm run lint",
-    "lint": "eslint src --ext ts",
-    "test": "vscode-test"
-  },
   "devDependencies": {
     "@types/glob": "^8.0.0",
     "@types/mocha": "^10.0.1",
@@ -88,6 +101,7 @@
     "@typescript-eslint/parser": "^5.45.0",
     "@vscode/test-cli": "^0.0.4",
     "@vscode/test-electron": "^2.2.0",
+    "@vscode/vsce": "^3.3.2",
     "eslint": "^8.28.0",
     "glob": "^8.0.3",
     "mocha": "^10.1.0",
