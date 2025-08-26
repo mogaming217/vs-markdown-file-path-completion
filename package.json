@@ -2,7 +2,7 @@
   "name": "vs-markdown-file-path-completion",
   "displayName": "Markdown File Path Completion",
   "description": "Provides file path autocompletion in Markdown files triggered by @ character for Claude Code.",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "author": "moga",
   "publisher": "moga",
   "icon": "icon.png",
